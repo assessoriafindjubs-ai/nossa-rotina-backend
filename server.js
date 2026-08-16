@@ -2,7 +2,8 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const {
-  getAuthUrl, handleCallback, createEvent, deleteEvent, listUpcomingEvents, parseRecurrence, APP_EVENT_MARKER,
+  getAuthUrl, handleCallback, createEvent, createSingleEvent, deleteEvent, listUpcomingEvents, parseRecurrence,
+  APP_EVENT_MARKER,
 } = require("./src/googleCalendar");
 const { setTaskEventId, findTaskByGoogleEventId, createImportedTask, getImportedTasks } = require("./src/firestore");
 
@@ -35,15 +36,17 @@ app.get("/auth/google/callback", async (req, res) => {
 });
 
 app.post("/api/sync-task", async (req, res) => {
-  const { taskId, titulo, dono, recorrencia } = req.body || {};
-  if (!taskId || !titulo || !recorrencia?.dias?.length) {
+  const { taskId, titulo, dono, recorrencia, dataHora } = req.body || {};
+  if (!taskId || !titulo || (!recorrencia?.dias?.length && !dataHora)) {
     return res.status(400).json({ error: "dados inválidos" });
   }
   const profiles = dono === "casal" ? ["p1", "p2"] : [dono];
   const results = {};
   for (const profile of profiles) {
     try {
-      const eventId = await createEvent(profile, titulo, recorrencia);
+      const eventId = recorrencia?.dias?.length
+        ? await createEvent(profile, titulo, recorrencia)
+        : await createSingleEvent(profile, titulo, dataHora);
       if (eventId) {
         await setTaskEventId(taskId, profile, eventId);
         results[profile] = eventId;

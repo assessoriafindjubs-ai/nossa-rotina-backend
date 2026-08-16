@@ -115,6 +115,31 @@ async function createEvent(profile, titulo, recorrencia) {
   return res.data.id;
 }
 
+// dataHora vem do app como "YYYY-MM-DDTHH:MM:00", sempre em horário de Brasília (sem DST desde 2019).
+function buildSingleEventBody(titulo, dataHora) {
+  const [datePart, timePart] = dataHora.split("T");
+  const [hh, mm] = timePart.split(":").map(Number);
+  const endTotalMin = hh * 60 + (mm || 0) + 30;
+  const endHora = `${String(Math.floor(endTotalMin / 60) % 24).padStart(2, "0")}:${String(endTotalMin % 60).padStart(2, "0")}`;
+  return {
+    summary: titulo,
+    description: APP_EVENT_MARKER,
+    start: { dateTime: `${dataHora}-03:00`, timeZone: TIMEZONE },
+    end: { dateTime: `${datePart}T${endHora}:00-03:00`, timeZone: TIMEZONE },
+  };
+}
+
+async function createSingleEvent(profile, titulo, dataHora) {
+  const client = await getAuthorizedClient(profile);
+  if (!client) return null;
+  const calendar = google.calendar({ version: "v3", auth: client });
+  const res = await calendar.events.insert({
+    calendarId: "primary",
+    requestBody: buildSingleEventBody(titulo, dataHora),
+  });
+  return res.data.id;
+}
+
 async function deleteEvent(profile, eventId) {
   const client = await getAuthorizedClient(profile);
   if (!client) return;
@@ -143,5 +168,6 @@ async function listUpcomingEvents(profile) {
 }
 
 module.exports = {
-  getAuthUrl, handleCallback, createEvent, deleteEvent, listUpcomingEvents, parseRecurrence, APP_EVENT_MARKER,
+  getAuthUrl, handleCallback, createEvent, createSingleEvent, deleteEvent, listUpcomingEvents, parseRecurrence,
+  APP_EVENT_MARKER,
 };
