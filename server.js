@@ -1,8 +1,10 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const { getAuthUrl, handleCallback, createEvent, deleteEvent } = require("./src/googleCalendar");
-const { setTaskEventId } = require("./src/firestore");
+const {
+  getAuthUrl, handleCallback, createEvent, deleteEvent, listUpcomingEvents, APP_EVENT_MARKER,
+} = require("./src/googleCalendar");
+const { setTaskEventId, findTaskByGoogleEventId, createImportedTask } = require("./src/firestore");
 
 const app = express();
 app.use(cors());
@@ -65,6 +67,29 @@ app.delete("/api/sync-task", async (req, res) => {
     }
   }
   res.json({ ok: true });
+});
+
+app.post("/api/import-calendar-events", async (req, res) => {
+  const { profile } = req.body || {};
+  if (profile !== "p1" && profile !== "p2") {
+    return res.status(400).json({ error: "profile inválido" });
+  }
+  try {
+    const events = await listUpcomingEvents(profile);
+    let imported = 0;
+    for (const event of events) {
+      if (!event.id || !event.summary) continue;
+      if (event.description === APP_EVENT_MARKER) continue; // já é uma tarefa criada pelo próprio app
+      const existing = await findTaskByGoogleEventId(profile, event.id);
+      if (existing) continue;
+      await createImportedTask(profile, event);
+      imported++;
+    }
+    res.json({ ok: true, imported });
+  } catch (err) {
+    console.error("Erro ao importar eventos:", err.message);
+    res.status(500).json({ error: "falha ao importar" });
+  }
 });
 
 const PORT = process.env.PORT || 8080;

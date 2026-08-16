@@ -39,6 +39,7 @@ async function getAuthorizedClient(profile) {
 }
 
 const GCAL_DAY = { dom: "SU", seg: "MO", ter: "TU", qua: "WE", qui: "TH", sex: "FR", sab: "SA" };
+const APP_EVENT_MARKER = "Criado pelo app Nossa Rotina";
 
 function buildEventBody(titulo, recorrencia) {
   const [hh, mm] = (recorrencia.horario || "19:00").split(":").map(Number);
@@ -48,7 +49,7 @@ function buildEventBody(titulo, recorrencia) {
   const byday = recorrencia.dias.map((d) => GCAL_DAY[d]).join(",");
   return {
     summary: titulo,
-    description: "Criado pelo app Nossa Rotina",
+    description: APP_EVENT_MARKER,
     start: { dateTime: start.toISOString(), timeZone: "America/Sao_Paulo" },
     end: { dateTime: end.toISOString(), timeZone: "America/Sao_Paulo" },
     recurrence: [`RRULE:FREQ=WEEKLY;BYDAY=${byday}`],
@@ -77,4 +78,21 @@ async function deleteEvent(profile, eventId) {
   }
 }
 
-module.exports = { getAuthUrl, handleCallback, createEvent, deleteEvent };
+async function listUpcomingEvents(profile) {
+  const client = await getAuthorizedClient(profile);
+  if (!client) return [];
+  const calendar = google.calendar({ version: "v3", auth: client });
+  const now = new Date();
+  const until = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+  const res = await calendar.events.list({
+    calendarId: "primary",
+    timeMin: now.toISOString(),
+    timeMax: until.toISOString(),
+    singleEvents: true,
+    orderBy: "startTime",
+    maxResults: 50,
+  });
+  return res.data.items || [];
+}
+
+module.exports = { getAuthUrl, handleCallback, createEvent, deleteEvent, listUpcomingEvents, APP_EVENT_MARKER };

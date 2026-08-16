@@ -29,4 +29,29 @@ async function setTaskEventId(taskId, profile, eventId) {
   await getDb().collection("tarefas").doc(taskId).set({ googleEventId: { [profile]: eventId } }, { merge: true });
 }
 
-module.exports = { getTokens, saveTokens, setTaskEventId };
+async function findTaskByGoogleEventId(profile, eventId) {
+  const snap = await getDb()
+    .collection("tarefas")
+    .where(`googleEventId.${profile}`, "==", eventId)
+    .limit(1)
+    .get();
+  return snap.empty ? null : snap.docs[0];
+}
+
+async function createImportedTask(profile, event) {
+  const dataHora = event.start?.dateTime || event.start?.date || null;
+  await getDb().collection("tarefas").add({
+    titulo: event.summary || "(sem título)",
+    dono: profile,
+    prioridade: 2,
+    concluida: false,
+    origem: "google",
+    dataHora,
+    recorrencia: null,
+    googleEventId: { [profile]: event.id },
+    criadoEm: admin.firestore.FieldValue.serverTimestamp(),
+    concluidoEm: null,
+  });
+}
+
+module.exports = { getTokens, saveTokens, setTaskEventId, findTaskByGoogleEventId, createImportedTask };
