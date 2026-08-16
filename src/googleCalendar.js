@@ -39,7 +39,32 @@ async function getAuthorizedClient(profile) {
 }
 
 const GCAL_DAY = { dom: "SU", seg: "MO", ter: "TU", qua: "WE", qui: "TH", sex: "FR", sab: "SA" };
+const GCAL_DAY_REVERSE = { SU: "dom", MO: "seg", TU: "ter", WE: "qua", TH: "qui", FR: "sex", SA: "sab" };
+const WEEKDAY_BY_INDEX = ["dom", "seg", "ter", "qua", "qui", "sex", "sab"];
 const APP_EVENT_MARKER = "Criado pelo app Nossa Rotina";
+
+// Traduz a RRULE de um evento recorrente do Google Calendar para o formato { dias, horario } do app.
+// Só reconhece recorrências diárias/semanais (o que o app consegue criar); o resto fica sem recorrência.
+function parseRecurrence(event) {
+  if (!event.recurrence || !event.start?.dateTime) return null;
+  const rruleLine = event.recurrence.find((r) => r.startsWith("RRULE:"));
+  if (!rruleLine) return null;
+  const rule = Object.fromEntries(rruleLine.replace("RRULE:", "").split(";").map((p) => p.split("=")));
+  const start = new Date(event.start.dateTime);
+  const horario = `${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`;
+
+  if (rule.FREQ === "DAILY") {
+    return { dias: [...WEEKDAY_BY_INDEX], horario };
+  }
+  if (rule.FREQ === "WEEKLY") {
+    if (rule.BYDAY) {
+      const dias = rule.BYDAY.split(",").map((d) => GCAL_DAY_REVERSE[d]).filter(Boolean);
+      if (dias.length) return { dias, horario };
+    }
+    return { dias: [WEEKDAY_BY_INDEX[start.getDay()]], horario };
+  }
+  return null;
+}
 
 function buildEventBody(titulo, recorrencia) {
   const [hh, mm] = (recorrencia.horario || "19:00").split(":").map(Number);
@@ -88,11 +113,12 @@ async function listUpcomingEvents(profile) {
     calendarId: "primary",
     timeMin: now.toISOString(),
     timeMax: until.toISOString(),
-    singleEvents: true,
-    orderBy: "startTime",
-    maxResults: 50,
+    singleEvents: false, // traz o evento "mestre" da recorrência, não uma cópia por ocorrência
+    maxResults: 100,
   });
   return res.data.items || [];
 }
 
-module.exports = { getAuthUrl, handleCallback, createEvent, deleteEvent, listUpcomingEvents, APP_EVENT_MARKER };
+module.exports = {
+  getAuthUrl, handleCallback, createEvent, deleteEvent, listUpcomingEvents, parseRecurrence, APP_EVENT_MARKER,
+};

@@ -38,8 +38,17 @@ async function findTaskByGoogleEventId(profile, eventId) {
   return snap.empty ? null : snap.docs[0];
 }
 
-async function createImportedTask(profile, event) {
-  const dataHora = event.start?.dateTime || event.start?.date || null;
+async function getImportedTasks(profile) {
+  const snap = await getDb()
+    .collection("tarefas")
+    .where("origem", "==", "google")
+    .where("dono", "==", profile)
+    .get();
+  return snap.docs.map((d) => ({ ref: d.ref, eventId: d.data().googleEventId?.[profile] }));
+}
+
+async function createImportedTask(profile, event, recorrencia) {
+  const dataHora = recorrencia ? null : event.start?.dateTime || event.start?.date || null;
   await getDb().collection("tarefas").add({
     titulo: event.summary || "(sem título)",
     dono: profile,
@@ -47,11 +56,13 @@ async function createImportedTask(profile, event) {
     concluida: false,
     origem: "google",
     dataHora,
-    recorrencia: null,
+    recorrencia: recorrencia || null,
     googleEventId: { [profile]: event.id },
     criadoEm: admin.firestore.FieldValue.serverTimestamp(),
     concluidoEm: null,
   });
 }
 
-module.exports = { getTokens, saveTokens, setTaskEventId, findTaskByGoogleEventId, createImportedTask };
+module.exports = {
+  getTokens, saveTokens, setTaskEventId, findTaskByGoogleEventId, createImportedTask, getImportedTasks,
+};

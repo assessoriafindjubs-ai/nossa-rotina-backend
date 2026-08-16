@@ -2,9 +2,9 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const {
-  getAuthUrl, handleCallback, createEvent, deleteEvent, listUpcomingEvents, APP_EVENT_MARKER,
+  getAuthUrl, handleCallback, createEvent, deleteEvent, listUpcomingEvents, parseRecurrence, APP_EVENT_MARKER,
 } = require("./src/googleCalendar");
-const { setTaskEventId, findTaskByGoogleEventId, createImportedTask } = require("./src/firestore");
+const { setTaskEventId, findTaskByGoogleEventId, createImportedTask, getImportedTasks } = require("./src/firestore");
 
 const app = express();
 app.use(cors());
@@ -75,17 +75,26 @@ app.post("/api/import-calendar-events", async (req, res) => {
     return res.status(400).json({ error: "profile inválido" });
   }
   try {
-    const events = await listUpcomingEvents(profile);
+    const events = (await listUpcomingEvents(profile)).filter(
+      (e) => e.id && e.summary && e.description !== APP_EVENT_MARKER
+    );
+    const currentIds = new Set(events.map((e) => e.id));
+
+    // remove tarefas importadas cujo evento não existe mais (ou virou obsoleto após a mudança
+    // de "uma tarefa por ocorrência" para "uma tarefa por série recorrente")
+    const existing = await getImportedTasks(profile);
+    const removals = existing.filter((t) => !t.eventId || !currentIds.has(t.eventId));
+    await Promise.all(removals.map((t) => t.ref.delete()));
+    const stillPresentIds = new Set(existing.map((t) => t.eventId).filter((id) => currentIds.has(id)));
+
     let imported = 0;
     for (const event of events) {
-      if (!event.id || !event.summary) continue;
-      if (event.description === APP_EVENT_MARKER) continue; // já é uma tarefa criada pelo próprio app
-      const existing = await findTaskByGoogleEventId(profile, event.id);
-      if (existing) continue;
-      await createImportedTask(profile, event);
+      if (stillPresentIds.has(event.id)) continue;
+      const recorrencia = parseRecurrence(event);
+      await createImportedTask(profile, event, recorrencia);
       imported++;
     }
-    res.json({ ok: true, imported });
+    res.json({ ok: true, imported, removed: removals.length });
   } catch (err) {
     console.error("Erro ao importar eventos:", err.message);
     res.status(500).json({ error: "falha ao importar" });
